@@ -18,7 +18,7 @@
 
 //pins for the TLC5947
 #define PWM_LATCH_PIN     10
-#define PWM_OE            23
+//#define PWM_OE            23
 
 
 //Pins for the decoder
@@ -44,7 +44,7 @@ IntervalTimer levelTimer;
 
 //function templates
 void setChannel(uint16_t channel, uint16_t value);
-void clearAll();
+void clearAnimationSequence();
 //void writeLEDs();
 //void setRGB(uint16_t ledIndex, uint16_t r, uint16_t g, uint16_t b);
 void packBufferForLevel(int level);
@@ -57,24 +57,23 @@ void getLedRGB(const std::vector<uint16_t>& vec, int level, int led, uint16_t& r
     We set the address on the CD74HCT137E decoder pins A0:A2 then latch
 */
 void levelChangerISR() {
-  digitalWriteFast(PWM_OE, HIGH); // Blank display
-
   currentLevel = (currentLevel + 1) & 0x07;
-  //int currentBits = currentLevel;
-
+  
+  //Set the next level on the decoder pins A0:A2 and latch it
   digitalWriteFast(DECODER_LE, LOW);
 
   digitalWriteFast(DECODER_A0, (currentLevel >> 0) & 0x01);
   digitalWriteFast(DECODER_A1, (currentLevel >> 1) & 0x01);
   digitalWriteFast(DECODER_A2, (currentLevel >> 2) & 0x01);
+  
+  digitalWriteFast(DECODER_LE, HIGH);
 
+  //now latch the data buffered into the TLC5947
   digitalWriteFast(PWM_LATCH_PIN, HIGH); // Latch the address
   delayNanoseconds(20); // Teensy 4.0 is too fast; needs a brief pause
   digitalWriteFast(PWM_LATCH_PIN, LOW);
   
-  digitalWriteFast(PWM_OE, LOW); // Unblank display
-
-  levelReadyToSwitch = true; // Flag to indicate the level has been switched
+  levelReadyToSwitch = true; // Flag to indicate the level has been switched and ready to buffer the next level's data for the next interrupt
 }
 
 /* Setup()
@@ -86,10 +85,11 @@ void setup() {
   Serial.println("\n\nHello World from Teensy 4.0! Starting LED Cube Test...");
 
   // Setup TLC5947 Control Pins
-  pinMode(PWM_OE, INPUT_PULLUP);
+  // this pin is tied with the latch pin on the TLC5947, fixes a pulsing issue when the latch pin is toggled too quickly
+  //pinMode(PWM_OE, INPUT_PULLUP);
   pinMode(PWM_LATCH_PIN, OUTPUT);
 
-  digitalWriteFast(PWM_OE, HIGH); //turn whole cube off to begin with
+  //digitalWriteFast(PWM_OE, HIGH); //turn whole cube off to begin with
 
   // Setup Decoder Address Pins
   pinMode(DECODER_A0, OUTPUT);
@@ -97,24 +97,43 @@ void setup() {
   pinMode(DECODER_A2, OUTPUT);
   pinMode(DECODER_LE, OUTPUT);
 
+  digitalWriteFast(DECODER_A0, LOW);
+  digitalWriteFast(DECODER_A1, LOW);
+  digitalWriteFast(DECODER_A2, LOW);
+  digitalWriteFast(DECODER_LE, LOW);
+
   //fire up the interrupt to change levels every 2000ms -> 500Hz refresh rate for the cube
   levelTimer.begin(levelChangerISR, 2000);
   
   // Initialize the Teensy hardware SPI bus
   SPI.begin();
 
-  //Test the helpers: Set Level 2, LED 8 to bright Purple (Max Red, No Green, Max Blue)
-  setLedRGB(animationSequence, 2, 8, 4095, 0, 4095);
+  clearAnimationSequence();
 
-  // Example: Read those values back later
-  uint16_t currentR, currentG, currentB;
-  getLedRGB(animationSequence, 2, 8, currentR, currentG, currentB);
-  Serial.printf("LED at Level 2, Index 8: R=%d, G=%d, B=%d\n", currentR, currentG, currentB);
+  //Test the helpers: Set Level 2, LED 8 to bright Purple (Max Red, No Green, Max Blue)
+  //setLedRGB(animationSequence, 2, 8, 4095, 0, 4095);
+
+
+  //random sample animation sequence for testing. Each level has 192 channels (8 boards * 24 channels) (Full cube)
+  // 8 levels * 192 LEDs * 3 colors = 4608 total elements
+  //first TCC in series is at the end of the array, last TCC in series is at the beginning of the array
+  animationSequence = {
+    255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, //level 0
+    1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 4, //level 1
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 8, //level 2
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 16, //level 3
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 32, //level 4
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 64, //level 5
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 128, //level 6 
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 256, 0, 0, 0, 256, //level 7 
+  };
 }
 
 /* loop()
    repeatedly run */
 void loop() {
+
+ // Serial.println("Main loop running. Current Level: " + String(currentLevel));
 
   if(levelReadyToSwitch) {
     levelReadyToSwitch = false;
@@ -127,8 +146,18 @@ void loop() {
     //Blast data via Hardware SPI
     //Teensy 4.0 easily supports up to 30MHz SPI clocks for the TLC5947
     SPI.beginTransaction(SPISettings(16000000, MSBFIRST, SPI_MODE0));
-    SPI.transfer(ledBuffer, NULL, 288); // Direct block transfer
+    SPI.transfer(ledBuffer, NULL, 288); // Direct block transfer was 288?
     SPI.endTransaction();
+
+    //Dont latch the data until the next level is ready to be displayed. The ISR will handle latching the data when the next level is switched.
+    //digitalWrite(PWM_LATCH_PIN, HIGH); 
+    //delayMicroseconds(1);           // A brief pause to ensure the chip sees it
+    //digitalWrite(PWM_LATCH_PIN, LOW);  
+
+    // Example: Read those values back later
+    //uint16_t currentR, currentG, currentB;
+    //getLedRGB(animationSequence, 0, 63, currentR, currentG, currentB);
+    //Serial.printf("R=%d, G=%d, B=%d\n", currentR, currentG, currentB);
   }
 
   runBackgroundAnimationsAndMath(); 
@@ -156,12 +185,8 @@ void setChannel(uint16_t channel, uint16_t value) {
   }
 }
 
-// Clears the buffer to 0 (all LEDs off)
-void clearAll() {
-  memset(ledBuffer, 0, DATA_BYTES);
-}
-
 void clearAnimationSequence() {
+  //Serial.println("Clearing animation sequence.");
   memset(animationSequence.data(), 0, animationSequence.size() * sizeof(uint16_t));
 }
 
@@ -190,18 +215,21 @@ uint16_t getAnimationValue(const std::vector<uint16_t>& vec, int level, int chan
 void runBackgroundAnimationsAndMath() {
   // Math, frames updates, serial communication, etc.
 
-  //random sample animation sequence for testing. Each level has 192 channels (8 boards * 24 channels) (Full cube)
-  // 8 levels * 192 LEDs * 3 colors = 4608 total elements
-  animationSequence = {
-    4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 0, 4095, 4095, 4095, 0, 4095, 2048, 2, //level0
-    4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 0, 4095, 4095, 4095, 0, 4095, 2048, 4, //level1
-    4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 0, 4095, 4095, 4095, 0, 4095, 2048, 8, //level2
-    4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 0, 4095, 4095, 4095, 0, 4095, 2048, 16, //level3
-    4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 0, 4095, 4095, 4095, 0, 4095, 2048, 32, //level4
-    4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 0, 4095, 4095, 4095, 0, 4095, 2048, 64, //level5
-    4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 0, 4095, 4095, 4095, 0, 4095, 2048, 128, //level6
-    4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 2048, 0, 0, 0, 4095, 0, 0, 0, 4095, 0, 0, 0, 4095, 4095, 4095, 0, 0, 4095, 4095, 4095, 0, 4095, 2048, 2048, 0, 4095, 4095, 4095, 0, 4095, 2048, 256, //level7
-  };
+  //TODO: setup animation timer. This would update any animation way too fast
+
+  clearAnimationSequence();
+
+  //testing the last 8 (since I only have 1 board wired up right now) 
+  //LEDs on the last level (level 0) to see if they are working
+  setLedRGB(animationSequence, 0, 56, 128, 0, 0);  //red
+  setLedRGB(animationSequence, 1, 57, 0, 256, 0);   //green
+  setLedRGB(animationSequence, 2, 58, 0, 0, 256);   //blue
+  setLedRGB(animationSequence, 3, 59, 0, 0, 4095);  //bright blue
+  setLedRGB(animationSequence, 4, 60, 0, 1024, 0);  //bright green
+  setLedRGB(animationSequence, 5, 61, 1024, 0, 0);  //red
+  setLedRGB(animationSequence, 6, 62, 512, 0, 512); //magenta
+  setLedRGB(animationSequence, 7, 63, 4095, 4095, 4095);  //bright white kind of
+
 }
 
 // --- Helper to SET an RGB LED ---
@@ -209,17 +237,19 @@ void setLedRGB(std::vector<uint16_t>& vec, int level, int led, uint16_t r, uint1
     // Calculate where the Red channel starts for this specific LED
     int baseIndex = (level * CHANNELS_PER_LEVEL) + (led * CHANNELS_PER_LED);
     
-    vec[baseIndex]     = r; // Red
+    vec[baseIndex + 2] = r; // Red
     vec[baseIndex + 1] = g; // Green
-    vec[baseIndex + 2] = b; // Blue
+    vec[baseIndex] = b; // Blue
 }
 
 // --- Helper to READ an RGB LED ---
 // We pass r, g, and b by reference so the function can modify them directly
 void getLedRGB(const std::vector<uint16_t>& vec, int level, int led, uint16_t& r, uint16_t& g, uint16_t& b) {
     int baseIndex = (level * CHANNELS_PER_LEVEL) + (led * CHANNELS_PER_LED);
+
+   // Serial.printf("Reading LED at Level %d, Index %d: Base Index = %d\n", level, led, baseIndex);
     
-    r = vec[baseIndex];
+    r = vec[baseIndex + 2];
     g = vec[baseIndex + 1];
-    b = vec[baseIndex + 2];
+    b = vec[baseIndex];
 }
