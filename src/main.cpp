@@ -18,6 +18,7 @@
 
 //pins for the TLC5947
 #define PWM_LATCH_PIN     10
+// this pin is tied with the latch pin on the TLC5947, fixes a pulsing issue when the latch pin is toggled too quickly
 //#define PWM_OE            23
 
 
@@ -29,6 +30,9 @@
 
 const int CHANNELS_PER_LEVEL = 192; //in pairs of 3 (RGB) = 64 RGB leds per level
 const int CHANNELS_PER_LED = 3; // R, G, B
+
+const int milisBetweenAnimations = 250; //every 250 ms, we will update the animation sequence
+elapsedMillis animationTimer; // Timer to track when to update the animation sequence
 
 // Array to hold our raw byte data to be blasted over hardware SPI
 uint8_t ledBuffer[DATA_BYTES];
@@ -103,7 +107,7 @@ void setup() {
   digitalWriteFast(DECODER_LE, LOW);
 
   //fire up the interrupt to change levels every 2000ms -> 500Hz refresh rate for the cube
-  levelTimer.begin(levelChangerISR, 2000);
+  levelTimer.begin(levelChangerISR, 200000);
   
   // Initialize the Teensy hardware SPI bus
   SPI.begin();
@@ -217,19 +221,60 @@ void runBackgroundAnimationsAndMath() {
 
   //TODO: setup animation timer. This would update any animation way too fast
 
-  clearAnimationSequence();
+  if(animationTimer >= milisBetweenAnimations) {
+    animationTimer = 0;
+    // Update animation state here
+    //Serial.println("Updating animation state...");
 
-  //testing the last 8 (since I only have 1 board wired up right now) 
-  //LEDs on the last level (level 0) to see if they are working
-  setLedRGB(animationSequence, 0, 56, 128, 0, 0);  //red
-  setLedRGB(animationSequence, 1, 57, 0, 256, 0);   //green
-  setLedRGB(animationSequence, 2, 58, 0, 0, 256);   //blue
-  setLedRGB(animationSequence, 3, 59, 0, 0, 4095);  //bright blue
-  setLedRGB(animationSequence, 4, 60, 0, 1024, 0);  //bright green
-  setLedRGB(animationSequence, 5, 61, 1024, 0, 0);  //red
-  setLedRGB(animationSequence, 6, 62, 512, 0, 512); //magenta
-  setLedRGB(animationSequence, 7, 63, 4095, 4095, 4095);  //bright white kind of
+    clearAnimationSequence();
 
+    //testing the last 8 (since I only have 1 board wired up right now) 
+    //LEDs on the last level (level 0) to see if they are working
+
+    //TLC-8 off the MC frount row
+    setLedRGB(animationSequence, 0, 0, 0, 0, 2048);  //bright white kind of
+    setLedRGB(animationSequence, 0, 7, 0, 512, 0);   //bright white kind of
+
+    //TLC-7 off the MC
+    setLedRGB(animationSequence, 0, 8, 0, 0, 2048);  //bright white kind of
+    setLedRGB(animationSequence, 0, 15, 0, 512, 0);  //bright white kind of
+
+    //TLC-6 off the MC
+    setLedRGB(animationSequence, 0, 16, 0, 0, 2048);  //bright white kind of
+    setLedRGB(animationSequence, 0, 23, 0, 512, 0);   //bright white kind of
+
+    //TLC-5 off the MC
+    setLedRGB(animationSequence, 0, 24, 0, 0, 2048);  //bright white kind of
+    setLedRGB(animationSequence, 0, 31, 0, 512, 0);   //bright white kind of
+
+    //TLC-4 off the MC
+    setLedRGB(animationSequence, 0, 32, 0, 0, 2048);  //bright white kind of
+    setLedRGB(animationSequence, 0, 39, 0, 512, 0);   //bright white kind of
+
+    //TLC-3 off the MC
+    setLedRGB(animationSequence, 0, 40, 0, 0, 2048);  //bright white kind of
+    setLedRGB(animationSequence, 0, 47, 0, 512, 0);   //bright white kind of
+
+    //TLC-2 off the MC
+    setLedRGB(animationSequence, 0, 48, 0, 0, 2048);  //bright white kind of
+    setLedRGB(animationSequence, 0, 55, 0, 512, 0);   //bright white kind of
+
+    /*TLC-1 off the MC back row*/
+    setLedRGB(animationSequence, 0, 56, 128, 0, 0);   //red
+    setLedRGB(animationSequence, 1, 57, 0, 256, 0);   //green
+    setLedRGB(animationSequence, 2, 58, 0, 0, 256);   //blue
+    setLedRGB(animationSequence, 3, 59, 0, 0, 4095);  //bright blue
+    setLedRGB(animationSequence, 4, 60, 0, 1024, 0);  //bright green
+    setLedRGB(animationSequence, 5, 61, 1024, 0, 0);  //red
+    setLedRGB(animationSequence, 6, 62, 512, 0, 512); //magenta
+    setLedRGB(animationSequence, 7, 63, 4095, 4095, 4095);  //bright white kind of
+
+  }
+
+  //for(int i = 62; i > 0; i--) {
+  //  setLedRGB(animationSequence, 0, i, 4095, 0, 0); // Set the first LED of each level to red
+ // }
+ 
 }
 
 // --- Helper to SET an RGB LED ---
